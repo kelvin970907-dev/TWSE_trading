@@ -1,0 +1,16 @@
+signal_date,symbol,market,name,profiles_containing_symbol,profile_level_rows,selected_profile,status,planned_buy_notional_twd,net_pnl,net_return,profile_level_net_pnl,dedup_pnl_difference
+2026-06-24,2312,TWSE,金寶,broad_challenger_097dd332,1,broad_challenger_097dd332,evaluated,190000.0,1578.6325,0.0083085921052631,1578.6325,0.0
+2026-06-24,2483,TWSE,百容,broad_challenger_097dd332,1,broad_challenger_097dd332,evaluated,184400.0,11865.3416,0.0643456702819956,11865.3416,0.0
+2026-06-24,3094,TWSE,聯傑,broad_challenger_097dd332,1,broad_challenger_097dd332,evaluated,181000.0,2119.865,0.0117119613259668,2119.865,0.0
+2026-06-24,6695,TWSE,芯鼎,broad_challenger_097dd332,1,broad_challenger_097dd332,evaluated,137800.0,-1258.825,-0.009135159651669,-1258.825,0.0
+2026-06-24,8105,TWSE,凌巨,broad_challenger_097dd332,1,broad_challenger_097dd332,evaluated,188000.0,1488.6183999999998,0.0079181829787234,1488.6183999999998,0.0
+2026-07-01,1515,TWSE,力山,broad_challenger_097dd332,1,broad_challenger_097dd332,evaluated,177250.0,6869.3372500000005,0.0387550761636107,6869.3372500000005,0.0
+2026-07-01,3605,TWSE,宏致,broad_challenger_097dd332,1,broad_challenger_097dd332,evaluated,171200.0,-2813.6196,-0.0164346939252336,-2813.6196,0.0
+2026-07-01,6224,TWSE,聚鼎,broad_challenger_097dd332,1,broad_challenger_097dd332,evaluated,169800.0,-5994.4256000000005,-0.0353028598351001,-5994.4256000000005,0.0
+2026-07-01,6909,TWSE,創控,broad_challenger_097dd332,1,broad_challenger_097dd332,evaluated,181800.0,323.0448,0.0017769240924092,323.0448,0.0
+2026-07-01,8182,TPEX,加高,"broad_challenger_097dd332, conservative_tpex_35adc734, original_champion_tpex_500m",3,broad_challenger_097dd332,evaluated,162000.0,-2869.0881,-0.0177104203703703,-8607.264299999999,5738.176199999999
+2026-07-02,1515,TWSE,力山,broad_challenger_097dd332,1,broad_challenger_097dd332,evaluated,194750.0,-685.38525,-0.0035193080872913,-685.38525,0.0
+2026-07-02,2302,TWSE,麗正,broad_challenger_097dd332,1,broad_challenger_097dd332,evaluated,166200.0,2190.8754,0.0131821624548736,2190.8754,0.0
+2026-07-02,2484,TWSE,希華,broad_challenger_097dd332,1,broad_challenger_097dd332,evaluated,175400.0,11510.0832,0.0656219110604332,11510.0832,0.0
+2026-07-02,3317,TPEX,尼克森,"broad_challenger_097dd332, original_champion_tpex_500m",2,broad_challenger_097dd332,evaluated,194600.0,-933.6908,-0.004798,-1867.3816,933.6908
+2026-07-02,6133,TWSE,金橋,broad_challenger_097dd332,1,broad_challenger_097dd332,evaluated,183750.0,6788.3452,0.0369433752380952,6788.3452,0.0

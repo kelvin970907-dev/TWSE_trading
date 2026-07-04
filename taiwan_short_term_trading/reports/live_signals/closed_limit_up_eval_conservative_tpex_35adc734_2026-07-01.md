@@ -1,0 +1,49 @@
+# Closed-Limit-Up Paper Evaluation - 2026-07-01
+
+Signal CSV: `reports/live_signals/closed_limit_up_signals_conservative_tpex_35adc734_2026-07-01.csv`
+Signal date: `2026-07-01`
+Evaluation date: `2026-07-03`
+
+## Reminder
+
+This remains theoretical unless actual broker fill data confirms Day0 close execution.
+
+## Cost Assumptions
+
+| commission_rate | commission_discount | sell_tax_rate | slippage_bps_per_side | minimum_commission_twd |
+| --- | --- | --- | --- | --- |
+| 0.0014 | 0.2800 | 0.0030 | 5.0000 | 20.0000 |
+
+## Summary Metrics
+
+| metric | value |
+| --- | --- |
+| planned_orders | 1.0000 |
+| evaluated_orders | 1.0000 |
+| missing_day1_data | 0.0000 |
+| invalid_price | 0.0000 |
+| gross_pnl | -2,100.00 |
+| net_pnl | -2,869.09 |
+| avg_net_return | -0.0177 |
+| median_net_return | -0.0177 |
+| win_rate | 0.0000 |
+| profit_factor | 0.0000 |
+
+## Order-Level Results
+
+| profile_name | candidate_hash | signal_date | evaluation_date | symbol | name | market | sector | industry | status | planned_entry_price | planned_shares | planned_buy_notional_twd | day1_trade_date | day1_open | day1_high | day1_low | day1_close | theoretical_exit_price | gross_return | open_to_high_return | open_to_low_return | open_to_close_return | gross_pnl | net_pnl | net_return | buy_commission | sell_commission | sell_tax | slippage_cost | total_cost | paper_fill_assumed | actual_broker_fill_known | actual_broker_filled | notes | execution_warning |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| conservative_tpex_35adc734 | 35adc734 | 2026-07-01 | 2026-07-03 | 8182 | 加高 | TPEX | Technology/Electronics | Electronic Components | evaluated | 54.0000 | 3000 | 162,000.00 | 2026-07-02 | 53.3000 | 57.6000 | 51.5000 | 55.3000 | 53.3000 | -0.0130 | 0.0807 | -0.0338 | 0.0375 | -2,100.00 | -2,869.09 | -0.0177 | 64.6380 | 63.8001 | 479.7000 | 160.9500 | 769.0881 | True | False |  | Evaluated using next available daily_prices row for the same symbol and market. | This remains theoretical unless actual broker fill data confirms Day0 close execution. |
+
+## Missing Data Warnings
+
+_No rows._
+
+## Fill Verification Checklist
+
+- Confirm whether the Day0 close order was actually accepted and filled by the broker.
+- Record auction/order-book evidence when available.
+- Compare actual broker fill price with planned Day0 close.
+- Compare actual exit with theoretical Day1 open.
+
+Paper trade only. Day0 close limit-up fills may not be executable without auction/order-book confirmation.

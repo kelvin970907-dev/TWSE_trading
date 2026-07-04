@@ -1,0 +1,18 @@
+profile_name,symbol,name,market,sector,industry,evaluated_paper_trades,cumulative_net_pnl,avg_net_return,manual_observation_count,execution_confirmed_count
+broad_challenger_097dd332,2483,百容,TWSE,Technology/Electronics,Electronic Components,1,11865.3416,0.0643456702819956,0,0
+broad_challenger_097dd332,2484,希華,TWSE,Technology/Electronics,Electronic Components,1,11510.0832,0.0656219110604332,0,0
+broad_challenger_097dd332,6133,金橋,TWSE,Technology/Electronics,Electronic Components,1,6788.3452,0.0369433752380952,0,0
+broad_challenger_097dd332,1515,力山,TWSE,Industrials/Other,Electric Machinery,2,6183.952,0.0176178840381597,0,0
+broad_challenger_097dd332,2302,麗正,TWSE,Technology/Electronics,Semiconductor,1,2190.8754,0.0131821624548736,0,0
+broad_challenger_097dd332,3094,聯傑,TWSE,Technology/Electronics,Semiconductor,1,2119.865,0.0117119613259668,0,0
+broad_challenger_097dd332,2312,金寶,TWSE,Technology/Electronics,Other Electronics,1,1578.6325,0.0083085921052631,0,0
+broad_challenger_097dd332,8105,凌巨,TWSE,Technology/Electronics,Optoelectronics,1,1488.6183999999998,0.0079181829787234,0,0
+broad_challenger_097dd332,6909,創控,TWSE,Technology/Electronics,Semiconductor,1,323.0448,0.0017769240924092,0,0
+broad_challenger_097dd332,3317,尼克森,TPEX,Technology/Electronics,Semiconductor,1,-933.6908,-0.004798,0,0
+original_champion_tpex_500m,3317,尼克森,TPEX,Technology/Electronics,Semiconductor,1,-933.6908,-0.004798,0,0
+broad_challenger_097dd332,6695,芯鼎,TWSE,Technology/Electronics,Semiconductor,1,-1258.825,-0.009135159651669,0,0
+broad_challenger_097dd332,3605,宏致,TWSE,Technology/Electronics,Electronic Components,1,-2813.6196,-0.0164346939252336,0,0
+broad_challenger_097dd332,8182,加高,TPEX,Technology/Electronics,Electronic Components,1,-2869.0881,-0.0177104203703703,0,0
+conservative_tpex_35adc734,8182,加高,TPEX,Technology/Electronics,Electronic Components,1,-2869.0881,-0.0177104203703703,0,0
+original_champion_tpex_500m,8182,加高,TPEX,Technology/Electronics,Electronic Components,1,-2869.0881,-0.0177104203703703,0,0
+broad_challenger_097dd332,6224,聚鼎,TWSE,Technology/Electronics,Electronic Components,1,-5994.4256000000005,-0.0353028598351001,0,0

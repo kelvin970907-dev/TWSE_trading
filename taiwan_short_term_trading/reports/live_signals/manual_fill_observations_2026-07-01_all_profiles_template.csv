@@ -1,0 +1,8 @@
+observation_id,signal_date,profile_name,candidate_hash,symbol,market,name,observed_time,broker,intended_entry_price,displayed_best_bid,displayed_best_ask,displayed_bid_size_shares,displayed_ask_size_shares,limit_up_price,was_limit_up_locked,was_order_submitted,order_type,order_quantity_shares,order_price,simulated_queue_position,actual_filled_shares,actual_avg_fill_price,fill_status,reason_not_filled,screenshot_path,notes,created_at
+,2026-07-01,original_champion_tpex_500m,,8182,TPEX,加高,,,54.0,,,,,54.0,,False,limit,3000,54.0,,,,not_submitted,,,,
+,2026-07-01,broad_challenger_097dd332,097dd332,3605,TWSE,宏致,,,85.6,,,,,85.5,,False,limit,2000,85.6,,,,not_submitted,,,,
+,2026-07-01,broad_challenger_097dd332,097dd332,8182,TPEX,加高,,,54.0,,,,,54.0,,False,limit,3000,54.0,,,,not_submitted,,,,
+,2026-07-01,broad_challenger_097dd332,097dd332,1515,TWSE,力山,,,35.45,,,,,35.4,,False,limit,5000,35.45,,,,not_submitted,,,,
+,2026-07-01,broad_challenger_097dd332,097dd332,6909,TWSE,創控,,,60.6,,,,,60.5,,False,limit,3000,60.6,,,,not_submitted,,,,
+,2026-07-01,broad_challenger_097dd332,097dd332,6224,TWSE,聚鼎,,,84.9,,,,,84.5,,False,limit,2000,84.9,,,,not_submitted,,,,
+,2026-07-01,conservative_tpex_35adc734,35adc734,8182,TPEX,加高,,,54.0,,,,,54.0,,False,limit,3000,54.0,,,,not_submitted,,,,

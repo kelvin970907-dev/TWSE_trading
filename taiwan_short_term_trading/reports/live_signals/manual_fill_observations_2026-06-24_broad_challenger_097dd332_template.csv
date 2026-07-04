@@ -1,0 +1,6 @@
+observation_id,signal_date,profile_name,candidate_hash,symbol,market,name,observed_time,broker,intended_entry_price,displayed_best_bid,displayed_best_ask,displayed_bid_size_shares,displayed_ask_size_shares,limit_up_price,was_limit_up_locked,was_order_submitted,order_type,order_quantity_shares,order_price,simulated_queue_position,actual_filled_shares,actual_avg_fill_price,fill_status,reason_not_filled,screenshot_path,notes,created_at
+,2026-06-24,broad_challenger_097dd332,097dd332,2312,TWSE,金寶,,,38.0,,,,,38.0,,False,limit,5000,38.0,,,,not_submitted,,,,
+,2026-06-24,broad_challenger_097dd332,097dd332,8105,TWSE,凌巨,,,23.5,,,,,23.5,,False,limit,8000,23.5,,,,not_submitted,,,,
+,2026-06-24,broad_challenger_097dd332,097dd332,6695,TWSE,芯鼎,,,68.9,,,,,68.5,,False,limit,2000,68.9,,,,not_submitted,,,,
+,2026-06-24,broad_challenger_097dd332,097dd332,3094,TWSE,聯傑,,,45.25,,,,,45.2,,False,limit,4000,45.25,,,,not_submitted,,,,
+,2026-06-24,broad_challenger_097dd332,097dd332,2483,TWSE,百容,,,46.1,,,,,46.1,,False,limit,4000,46.1,,,,not_submitted,,,,

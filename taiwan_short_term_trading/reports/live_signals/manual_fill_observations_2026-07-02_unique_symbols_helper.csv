@@ -1,0 +1,6 @@
+signal_date,symbol,market,name,profiles_containing_symbol,max_order_quantity_shares,intended_entry_price,limit_up_price,sector,industry,notes
+2026-07-02,3317,TPEX,尼克森,"original_champion_tpex_500m, broad_challenger_097dd332",2000,97.3,97.0,Technology/Electronics,Semiconductor,Duplicate across profiles; copy one observation to each matching profile row.
+2026-07-02,2302,TWSE,麗正,broad_challenger_097dd332,3000,55.4,55.0,Technology/Electronics,Semiconductor,
+2026-07-02,6133,TWSE,金橋,broad_challenger_097dd332,7000,26.25,26.2,Technology/Electronics,Electronic Components,
+2026-07-02,2484,TWSE,希華,broad_challenger_097dd332,2000,87.7,87.5,Technology/Electronics,Electronic Components,
+2026-07-02,1515,TWSE,力山,broad_challenger_097dd332,5000,38.95,38.9,Industrials/Other,Electric Machinery,
