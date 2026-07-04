@@ -1,6 +1,0 @@
-signal_date,symbol,market,name,profiles_containing_symbol,max_order_quantity_shares,intended_entry_price,limit_up_price,sector,industry,notes
-2026-07-01,1515,TWSE,力山,broad_challenger_097dd332,5000,35.45,35.4,Industrials/Other,Electric Machinery,
-2026-07-01,3605,TWSE,宏致,broad_challenger_097dd332,2000,85.6,85.5,Technology/Electronics,Electronic Components,
-2026-07-01,6224,TWSE,聚鼎,broad_challenger_097dd332,2000,84.9,84.5,Technology/Electronics,Electronic Components,
-2026-07-01,6909,TWSE,創控,broad_challenger_097dd332,3000,60.6,60.5,Technology/Electronics,Semiconductor,
-2026-07-01,8182,TPEX,加高,"broad_challenger_097dd332, conservative_tpex_35adc734, original_champion_tpex_500m",3000,54.0,54.0,Technology/Electronics,Electronic Components,Duplicate across profiles; copy one observation to each matching profile row.

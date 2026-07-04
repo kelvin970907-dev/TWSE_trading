@@ -1,7 +1,0 @@
-observation_id,signal_date,profile_name,candidate_hash,symbol,market,name,observed_time,broker,intended_entry_price,displayed_best_bid,displayed_best_ask,displayed_bid_size_shares,displayed_ask_size_shares,limit_up_price,was_limit_up_locked,was_order_submitted,order_type,order_quantity_shares,order_price,simulated_queue_position,actual_filled_shares,actual_avg_fill_price,fill_status,reason_not_filled,screenshot_path,notes,created_at
-,2026-07-02,original_champion_tpex_500m,,3317,TPEX,尼克森,,,97.3,,,,,97.0,,False,limit,2000,97.3,,,,not_submitted,,,,
-,2026-07-02,broad_challenger_097dd332,097dd332,2302,TWSE,麗正,,,55.4,,,,,55.0,,False,limit,3000,55.4,,,,not_submitted,,,,
-,2026-07-02,broad_challenger_097dd332,097dd332,3317,TPEX,尼克森,,,97.3,,,,,97.0,,False,limit,2000,97.3,,,,not_submitted,,,,
-,2026-07-02,broad_challenger_097dd332,097dd332,6133,TWSE,金橋,,,26.25,,,,,26.2,,False,limit,7000,26.25,,,,not_submitted,,,,
-,2026-07-02,broad_challenger_097dd332,097dd332,2484,TWSE,希華,,,87.7,,,,,87.5,,False,limit,2000,87.7,,,,not_submitted,,,,
-,2026-07-02,broad_challenger_097dd332,097dd332,1515,TWSE,力山,,,38.95,,,,,38.9,,False,limit,5000,38.95,,,,not_submitted,,,,
