@@ -283,6 +283,59 @@ def test_upsert_dataframe_inserts_and_replaces_rows(tmp_path: Path) -> None:
     assert rows == [("2330", pd.Timestamp("2024-01-02").date(), 601.0)]
 
 
+def test_upsert_dataframe_replaces_existing_index_daily_price(tmp_path: Path) -> None:
+    db_path = tmp_path / "taiwan_trading.duckdb"
+    init_db(db_path)
+    first = pd.DataFrame(
+        [
+            {
+                "index_symbol": "TAIEX",
+                "trade_date": pd.Timestamp("2026-07-03"),
+                "open": 22000.0,
+                "high": 22100.0,
+                "low": 21900.0,
+                "close": 22050.0,
+                "volume": 1_000_000.0,
+                "turnover_twd": 100_000_000_000.0,
+                "daily_return": 0.01,
+                "ma5": 21900.0,
+                "ma20": 21800.0,
+                "ma60": 21600.0,
+                "close_above_ma20": True,
+                "close_above_ma60": True,
+                "drawdown_from_60d_high": -0.01,
+                "source": "unit_test_first",
+            }
+        ]
+    )
+    replacement = first.assign(close=22123.0, source="unit_test_replacement")
+
+    with get_connection(db_path) as conn:
+        assert upsert_dataframe(conn, "index_daily_prices", first, ["index_symbol", "trade_date"]) == 1
+        assert upsert_dataframe(conn, "index_daily_prices", replacement, ["index_symbol", "trade_date"]) == 1
+        rows = conn.execute(
+            """
+            SELECT index_symbol, trade_date, close, source
+            FROM index_daily_prices
+            WHERE index_symbol = 'TAIEX'
+            """
+        ).fetchall()
+
+    assert rows == [("TAIEX", pd.Timestamp("2026-07-03").date(), 22123.0, "unit_test_replacement")]
+
+
+def test_upsert_dataframe_empty_frame_is_noop(tmp_path: Path) -> None:
+    db_path = tmp_path / "taiwan_trading.duckdb"
+    init_db(db_path)
+    empty = pd.DataFrame(columns=["index_symbol", "trade_date", "close"])
+
+    with get_connection(db_path) as conn:
+        assert upsert_dataframe(conn, "index_daily_prices", empty, ["index_symbol", "trade_date"]) == 0
+        count = conn.execute("SELECT COUNT(*) FROM index_daily_prices").fetchone()[0]
+
+    assert count == 0
+
+
 def test_upsert_dataframe_rejects_missing_key_column(tmp_path: Path) -> None:
     db_path = tmp_path / "taiwan_trading.duckdb"
     init_db(db_path)

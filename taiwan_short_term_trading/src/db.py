@@ -392,8 +392,10 @@ def upsert_dataframe(
 
     The operation validates that the table exists, all DataFrame columns belong
     to the table, and every key column exists in both the table and DataFrame.
-    Rows matching the supplied key columns are deleted and then reinserted in a
-    single transaction.
+    Rows matching the supplied key columns are deleted and then reinserted.
+    This deliberately avoids DuckDB conflict/replace syntax and explicit
+    transaction wrappers, which have been fragile on Databricks Volume-backed
+    DuckDB files.
 
     Args:
         conn: Open DuckDB connection.
@@ -476,7 +478,6 @@ def upsert_dataframe(
 
     try:
         conn.register(temp_view, df)
-        conn.execute("BEGIN TRANSACTION")
         conn.execute(
             f"""
             DELETE FROM {safe_table} AS target
@@ -494,9 +495,7 @@ def upsert_dataframe(
             FROM {safe_temp_view}
             """
         )
-        conn.execute("COMMIT")
     except duckdb.Error as exc:
-        _rollback_quietly(conn)
         raise DatabaseError(f"Failed to upsert {len(df)} row(s) into {table_name}: {exc}") from exc
     finally:
         _unregister_quietly(conn, temp_view)
