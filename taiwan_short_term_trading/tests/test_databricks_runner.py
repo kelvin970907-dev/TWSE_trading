@@ -152,6 +152,24 @@ def test_local_mode_uses_root_local_scratch_by_default(tmp_path: Path) -> None:
     assert persistent_db.read_text(encoding="utf-8") == "new-db"
 
 
+def test_run_as_script_returns_normally_on_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = load_runner_module()
+
+    monkeypatch.setattr(runner, "main", lambda: 0)
+
+    assert runner.run_as_script() is None
+
+
+def test_run_as_script_raises_system_exit_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = load_runner_module()
+
+    monkeypatch.setattr(runner, "main", lambda: 7)
+
+    with pytest.raises(SystemExit) as exc_info:
+        runner.run_as_script()
+    assert exc_info.value.code == 7
+
+
 def make_args(root: Path, scratch_root: Path | None) -> SimpleNamespace:
     return SimpleNamespace(
         root=root,

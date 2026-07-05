@@ -332,5 +332,13 @@ def main() -> int:
     return run_databricks_pipeline(parse_args())
 
 
+def run_as_script() -> None:
+    """Exit nonzero on failure, but return normally on success for Databricks."""
+
+    exit_code = main()
+    if exit_code != 0:
+        raise SystemExit(exit_code)
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    run_as_script()
