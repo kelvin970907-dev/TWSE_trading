@@ -9,7 +9,6 @@ calls the same Python pipeline used by local launchd.
 from __future__ import annotations
 
 import argparse
-import contextlib
 import os
 import sys
 import traceback
@@ -23,21 +22,20 @@ DEFAULT_DATABRICKS_ROOT = Path("/dbfs/FileStore/taiwan_trading")
 CHICAGO_TZ = ZoneInfo("America/Chicago")
 
 
-class Tee:
-    """Write text to multiple file-like streams."""
+def safe_write_text(path: Path, text: str) -> None:
+    """Write text in one operation for Databricks Volume compatibility."""
 
-    def __init__(self, *streams):
-        self.streams = streams
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
 
-    def write(self, text: str) -> int:
-        for stream in self.streams:
-            stream.write(text)
-            stream.flush()
-        return len(text)
 
-    def flush(self) -> None:
-        for stream in self.streams:
-            stream.flush()
+def safe_append_text(path: Path, text: str) -> None:
+    """Append text without holding or flushing an open Volume file handle."""
+
+    existing = ""
+    if path.exists():
+        existing = path.read_text(encoding="utf-8")
+    safe_write_text(path, existing + text)
 
 
 def parse_args() -> argparse.Namespace:
@@ -88,61 +86,69 @@ def main() -> int:
     if str(CODE_ROOT) not in sys.path:
         sys.path.insert(0, str(CODE_ROOT))
 
-    with log_file.open("a", encoding="utf-8") as log_handle:
-        tee_stdout = Tee(sys.stdout, log_handle)
-        tee_stderr = Tee(sys.stderr, log_handle)
-        with contextlib.redirect_stdout(tee_stdout), contextlib.redirect_stderr(tee_stderr):
-            print("=" * 72)
-            print("Taiwan closed-limit-up Databricks paper pipeline")
-            print(f"Started: {datetime.now(CHICAGO_TZ).isoformat()}")
-            print(f"Code root: {CODE_ROOT}")
-            print(f"Runtime root: {root}")
-            print(f"Database: {db_path}")
-            print(f"Output dir: {output_dir}")
-            print("Paper trading only: no real orders are submitted by this pipeline.")
-            print("=" * 72)
-            try:
-                if not db_path.exists():
-                    raise FileNotFoundError(
-                        f"DuckDB database is missing: {db_path}. "
-                        "Upload or create the database before running the Databricks job."
-                    )
-                from src.live.run_daily_closed_limit_up_pipeline import run_daily_closed_limit_up_pipeline
+    log_lines: list[str] = []
 
-                result = run_daily_closed_limit_up_pipeline(
-                    db_path=db_path,
-                    capital_twd=args.capital_twd,
-                    market=args.market,
-                    start=args.start,
-                    end=args.end,
-                    output_dir=output_dir,
-                    skip_data_update=args.skip_data_update,
-                    skip_index_update=args.skip_index_update,
-                    skip_sector_update=args.skip_sector_update,
-                    refresh_sector_map=args.refresh_sector_map,
-                    signal_date=args.signal_date,
-                    dry_run=args.dry_run,
-                    profile=args.profile,
-                    taiex_retry_delay_seconds=args.taiex_retry_delay_seconds,
-                )
-                print(f"Completed: {datetime.now(CHICAGO_TZ).isoformat()}")
-                print(f"Latest pipeline report: {result.report_path}")
-                print(f"TAIEX freshness: {result.taiex_freshness_status}")
-                print(f"Selected paper orders: {result.selected_orders}")
-                print("Selected orders by profile:")
-                for profile_name, count in result.selected_orders_by_profile.items():
-                    print(f"- {profile_name}: {count}")
-                print(f"Log file: {log_file}")
-                return 0
-            except Exception as exc:  # noqa: BLE001 - top-level runner should log full failure details.
-                with error_log.open("a", encoding="utf-8") as error_handle:
-                    error_handle.write(
-                        f"[{datetime.now(CHICAGO_TZ).isoformat()}] FAILURE db={db_path} log={log_file}: {exc}\n"
-                    )
-                print("Databricks paper pipeline failed.")
-                print(traceback.format_exc())
-                print(f"Error log: {error_log}")
-                return 1
+    def log(message: str = "") -> None:
+        print(message)
+        log_lines.append(message)
+
+    log("=" * 72)
+    log("Taiwan closed-limit-up Databricks paper pipeline")
+    log(f"Started: {datetime.now(CHICAGO_TZ).isoformat()}")
+    log(f"Code root: {CODE_ROOT}")
+    log(f"Runtime root: {root}")
+    log(f"Database: {db_path}")
+    log(f"Output dir: {output_dir}")
+    log("Paper trading only: no real orders are submitted by this pipeline.")
+    log("=" * 72)
+    exit_code = 0
+    try:
+        if not db_path.exists():
+            raise FileNotFoundError(
+                f"DuckDB database is missing: {db_path}. "
+                "Upload or create the database before running the Databricks job."
+            )
+        from src.live.run_daily_closed_limit_up_pipeline import run_daily_closed_limit_up_pipeline
+
+        result = run_daily_closed_limit_up_pipeline(
+            db_path=db_path,
+            capital_twd=args.capital_twd,
+            market=args.market,
+            start=args.start,
+            end=args.end,
+            output_dir=output_dir,
+            skip_data_update=args.skip_data_update,
+            skip_index_update=args.skip_index_update,
+            skip_sector_update=args.skip_sector_update,
+            refresh_sector_map=args.refresh_sector_map,
+            signal_date=args.signal_date,
+            dry_run=args.dry_run,
+            profile=args.profile,
+            taiex_retry_delay_seconds=args.taiex_retry_delay_seconds,
+        )
+        log(f"Completed: {datetime.now(CHICAGO_TZ).isoformat()}")
+        log(f"Latest pipeline report: {result.report_path}")
+        log(f"TAIEX freshness: {result.taiex_freshness_status}")
+        log(f"Selected paper orders: {result.selected_orders}")
+        log("Selected orders by profile:")
+        for profile_name, count in result.selected_orders_by_profile.items():
+            log(f"- {profile_name}: {count}")
+        log(f"Log file: {log_file}")
+    except Exception as exc:  # noqa: BLE001 - top-level runner should log full failure details.
+        exit_code = 1
+        failure_line = f"[{datetime.now(CHICAGO_TZ).isoformat()}] FAILURE db={db_path} log={log_file}: {exc}\n"
+        safe_append_text(error_log, failure_line)
+        log("Databricks paper pipeline failed.")
+        log(traceback.format_exc())
+        log(f"Error log: {error_log}")
+    finally:
+        try:
+            safe_write_text(log_file, "\n".join(log_lines) + "\n")
+        except Exception as log_exc:  # noqa: BLE001 - stdout still carries the run status.
+            print(f"Failed to write Databricks log file {log_file}: {log_exc}", file=sys.stderr)
+            if exit_code == 0:
+                exit_code = 1
+    return exit_code
 
 
 if __name__ == "__main__":
