@@ -344,6 +344,7 @@ The main plist is `scripts/com.kelvin.taiwan-paper-pipeline.plist`; the optional
 The codebase can run in local mode or Databricks mode without manual path edits. Runtime paths are controlled by environment variables:
 
 - `TAIWAN_TRADING_ROOT`: root for data, reports, logs, and default database path
+- `TAIWAN_TRADING_CODE_ROOT`: optional project code root when Databricks does not expose `__file__`
 - `TAIWAN_TRADING_DB_PATH`: optional explicit DuckDB path
 - `TAIWAN_TRADING_DATA_DIR`: optional explicit data directory
 - `TAIWAN_TRADING_RAW_DATA_DIR`: optional explicit raw-cache directory
@@ -368,6 +369,7 @@ Example Databricks job command:
 
 ```bash
 python scripts/run_databricks_daily_pipeline.py \
+  --code-root /Workspace/Users/kelvin970907@gmail.com/TWSE_trading/taiwan_short_term_trading \
   --root /dbfs/FileStore/taiwan_trading \
   --capital-twd 1000000 \
   --profile all \
@@ -378,11 +380,26 @@ Using a Unity Catalog Volume:
 
 ```bash
 python scripts/run_databricks_daily_pipeline.py \
+  --code-root /Workspace/Users/kelvin970907@gmail.com/TWSE_trading/taiwan_short_term_trading \
   --root /Volumes/<catalog>/<schema>/taiwan_trading \
   --capital-twd 1000000 \
   --profile all \
   --market BOTH
 ```
+
+The Databricks runner treats `--root` as persistent storage and uses local scratch disk for active DuckDB writes. By default on Databricks it copies `${TAIWAN_TRADING_ROOT}/data/taiwan_trading.duckdb` to `/local_disk0/taiwan_trading_work/data/taiwan_trading.duckdb`, runs the pipeline with scratch DB and scratch report paths, then copies the updated DuckDB file and generated reports/logs back to the persistent root after a successful run. Override scratch location with:
+
+```bash
+python scripts/run_databricks_daily_pipeline.py \
+  --code-root /Workspace/Users/kelvin970907@gmail.com/TWSE_trading/taiwan_short_term_trading \
+  --root /Volumes/<catalog>/<schema>/taiwan_trading \
+  --scratch-root /local_disk0/taiwan_trading_work \
+  --capital-twd 1000000 \
+  --profile all \
+  --market BOTH
+```
+
+On failure, the persistent DuckDB is not overwritten; scratch logs and error logs are copied back when possible.
 
 The Databricks runner writes:
 

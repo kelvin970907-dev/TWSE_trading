@@ -19,10 +19,39 @@ from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 
-CODE_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATABRICKS_ROOT = Path("/dbfs/FileStore/taiwan_trading")
 DEFAULT_DATABRICKS_SCRATCH_ROOT = Path("/local_disk0/taiwan_trading_work")
 CHICAGO_TZ = ZoneInfo("America/Chicago")
+
+
+def resolve_code_root(explicit_code_root: Path | str | None = None) -> Path:
+    """Resolve the checked-out project root in CLI and Databricks Job contexts."""
+
+    if explicit_code_root is not None:
+        root = Path(explicit_code_root).expanduser().resolve()
+        if not root.exists():
+            raise FileNotFoundError(f"Explicit code root does not exist: {root}")
+        return root
+
+    file_value = globals().get("__file__")
+    if file_value:
+        return Path(file_value).resolve().parents[1]
+
+    env_code_root = os.getenv("TAIWAN_TRADING_CODE_ROOT")
+    if env_code_root:
+        root = Path(env_code_root).expanduser().resolve()
+        if not root.exists():
+            raise FileNotFoundError(f"TAIWAN_TRADING_CODE_ROOT does not exist: {root}")
+        return root
+
+    cwd = Path.cwd().resolve()
+    if (cwd / "scripts" / "run_databricks_daily_pipeline.py").exists() and (cwd / "src").is_dir():
+        return cwd
+
+    if cwd.name == "scripts" and (cwd / "run_databricks_daily_pipeline.py").exists() and (cwd.parent / "src").is_dir():
+        return cwd.parent
+
+    raise RuntimeError("Cannot resolve code root. Run from project root or set TAIWAN_TRADING_CODE_ROOT.")
 
 
 def safe_write_text(path: Path, text: str) -> None:
@@ -137,6 +166,14 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Local scratch root for active DuckDB writes. Defaults to /local_disk0/taiwan_trading_work on Databricks.",
     )
+    parser.add_argument(
+        "--code-root",
+        type=Path,
+        help=(
+            "Explicit project code root. Use this for Databricks Jobs when __file__ is unavailable, "
+            "for example /Workspace/Users/.../TWSE_trading/taiwan_short_term_trading."
+        ),
+    )
     parser.add_argument("--db", type=Path, help="DuckDB path. Defaults to <root>/data/taiwan_trading.duckdb.")
     parser.add_argument("--capital-twd", type=float, default=1_000_000.0)
     parser.add_argument("--market", choices=["TWSE", "TPEX", "BOTH"], default="BOTH")
@@ -158,6 +195,7 @@ def run_databricks_pipeline(
     *,
     pipeline_func: Callable[..., Any] | None = None,
 ) -> int:
+    code_root = resolve_code_root(args.code_root)
     root = args.root.expanduser()
     persistent_db = (args.db if args.db is not None else root / "data" / "taiwan_trading.duckdb").expanduser()
     persistent_reports_dir = root / "reports"
@@ -172,8 +210,8 @@ def run_databricks_pipeline(
     persistent_output_dir.mkdir(parents=True, exist_ok=True)
     persistent_log_dir.mkdir(parents=True, exist_ok=True)
 
-    if str(CODE_ROOT) not in sys.path:
-        sys.path.insert(0, str(CODE_ROOT))
+    if str(code_root) not in sys.path:
+        sys.path.insert(0, str(code_root))
 
     log_lines: list[str] = []
 
@@ -184,7 +222,7 @@ def run_databricks_pipeline(
     log("=" * 72)
     log("Taiwan closed-limit-up Databricks paper pipeline")
     log(f"Started: {datetime.now(CHICAGO_TZ).isoformat()}")
-    log(f"Code root: {CODE_ROOT}")
+    log(f"Code root: {code_root}")
     log(f"Persistent root: {root}")
     log(f"Persistent DB: {persistent_db}")
     log(f"Persistent output dir: {persistent_output_dir}")

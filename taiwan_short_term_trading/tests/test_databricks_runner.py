@@ -4,6 +4,8 @@ import importlib.util
 from types import SimpleNamespace
 from pathlib import Path
 
+import pytest
+
 
 def load_runner_module():
     script_path = Path(__file__).resolve().parents[1] / "scripts" / "run_databricks_daily_pipeline.py"
@@ -23,6 +25,50 @@ def test_safe_write_and_append_text(tmp_path: Path) -> None:
     runner.safe_append_text(log_path, "second\n")
 
     assert log_path.read_text(encoding="utf-8") == "first\nsecond\n"
+
+
+def test_resolve_code_root_uses_explicit_path(tmp_path: Path) -> None:
+    runner = load_runner_module()
+    code_root = tmp_path / "explicit_project"
+    code_root.mkdir()
+
+    assert runner.resolve_code_root(code_root) == code_root.resolve()
+
+
+def test_resolve_code_root_uses_env_when_file_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = load_runner_module()
+    code_root = tmp_path / "env_project"
+    code_root.mkdir()
+
+    monkeypatch.delattr(runner, "__file__", raising=False)
+    monkeypatch.setenv("TAIWAN_TRADING_CODE_ROOT", str(code_root))
+
+    assert runner.resolve_code_root() == code_root.resolve()
+
+
+def test_resolve_code_root_works_from_project_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = load_runner_module()
+    code_root = tmp_path / "project"
+    (code_root / "scripts").mkdir(parents=True)
+    (code_root / "src").mkdir()
+    (code_root / "scripts" / "run_databricks_daily_pipeline.py").write_text("", encoding="utf-8")
+
+    monkeypatch.delattr(runner, "__file__", raising=False)
+    monkeypatch.delenv("TAIWAN_TRADING_CODE_ROOT", raising=False)
+    monkeypatch.chdir(code_root)
+
+    assert runner.resolve_code_root() == code_root.resolve()
+
+
+def test_resolve_code_root_failure_message_is_clear(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = load_runner_module()
+
+    monkeypatch.delattr(runner, "__file__", raising=False)
+    monkeypatch.delenv("TAIWAN_TRADING_CODE_ROOT", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(RuntimeError, match="Cannot resolve code root"):
+        runner.resolve_code_root()
 
 
 def test_success_copies_db_to_scratch_syncs_back_and_copies_reports(tmp_path: Path) -> None:
@@ -110,6 +156,7 @@ def make_args(root: Path, scratch_root: Path | None) -> SimpleNamespace:
     return SimpleNamespace(
         root=root,
         scratch_root=scratch_root,
+        code_root=None,
         db=None,
         capital_twd=1_000_000.0,
         market="BOTH",
