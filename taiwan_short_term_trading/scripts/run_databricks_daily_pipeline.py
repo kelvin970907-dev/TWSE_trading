@@ -10,15 +10,18 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import sys
 import traceback
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 
 CODE_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATABRICKS_ROOT = Path("/dbfs/FileStore/taiwan_trading")
+DEFAULT_DATABRICKS_SCRATCH_ROOT = Path("/local_disk0/taiwan_trading_work")
 CHICAGO_TZ = ZoneInfo("America/Chicago")
 
 
@@ -38,6 +41,89 @@ def safe_append_text(path: Path, text: str) -> None:
     safe_write_text(path, existing + text)
 
 
+def default_scratch_root(root: Path) -> Path:
+    """Choose a scratch root that is local on Databricks and safe locally."""
+
+    configured = os.getenv("TAIWAN_TRADING_SCRATCH_ROOT")
+    if configured:
+        return Path(configured).expanduser()
+    root_text = str(root)
+    if os.getenv("DATABRICKS_RUNTIME_VERSION") or root_text.startswith(("/dbfs/", "/Volumes/")):
+        return DEFAULT_DATABRICKS_SCRATCH_ROOT
+    return root / ".databricks_scratch"
+
+
+def copy_file_with_size_check(source: Path, destination: Path, *, label: str) -> None:
+    """Copy a file and verify the destination byte size matches."""
+
+    if not source.exists():
+        raise FileNotFoundError(f"{label} source is missing: {source}")
+    source_size = source.stat().st_size
+    if source_size <= 0:
+        raise RuntimeError(f"{label} source is empty: {source}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+    destination_size = destination.stat().st_size
+    if destination_size != source_size:
+        raise RuntimeError(
+            f"{label} copy size mismatch: source={source_size} bytes, "
+            f"destination={destination_size} bytes"
+        )
+
+
+def copy_tree_files(source_dir: Path, destination_dir: Path) -> int:
+    """Copy all files from one directory tree to another and return file count."""
+
+    if not source_dir.exists():
+        return 0
+    count = 0
+    for source in source_dir.rglob("*"):
+        if not source.is_file():
+            continue
+        relative = source.relative_to(source_dir)
+        destination = destination_dir / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        count += 1
+    return count
+
+
+def prepare_scratch_workspace(
+    *,
+    persistent_db: Path,
+    persistent_reports_dir: Path,
+    scratch_root: Path,
+) -> tuple[Path, Path, Path]:
+    """Reset scratch, copy persistent DB and reports into it, and return scratch paths."""
+
+    if scratch_root.resolve() == Path("/"):
+        raise RuntimeError("Refusing to use filesystem root as scratch directory")
+    if scratch_root.resolve() == persistent_reports_dir.parent.resolve():
+        raise RuntimeError("Scratch root must not equal the persistent runtime root")
+
+    shutil.rmtree(scratch_root, ignore_errors=True)
+    scratch_db = scratch_root / "data" / "taiwan_trading.duckdb"
+    scratch_output_dir = scratch_root / "reports" / "live_signals"
+    scratch_logs_dir = scratch_root / "logs"
+    scratch_logs_dir.mkdir(parents=True, exist_ok=True)
+    copy_file_with_size_check(persistent_db, scratch_db, label="DuckDB scratch input")
+    copy_tree_files(persistent_reports_dir, scratch_root / "reports")
+    scratch_output_dir.mkdir(parents=True, exist_ok=True)
+    return scratch_db, scratch_output_dir, scratch_logs_dir
+
+
+def sync_scratch_db_back(*, scratch_db: Path, persistent_db: Path) -> None:
+    """Copy scratch DuckDB back to persistent storage via temp file then replace."""
+
+    temp_path = persistent_db.with_name(f".{persistent_db.name}.tmp.{os.getpid()}")
+    try:
+        copy_file_with_size_check(scratch_db, temp_path, label="DuckDB sync-back")
+        os.replace(temp_path, persistent_db)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Taiwan paper pipeline on Databricks")
     parser.add_argument(
@@ -45,6 +131,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path(os.getenv("TAIWAN_TRADING_ROOT", DEFAULT_DATABRICKS_ROOT)),
         help="Runtime root for data, reports, and logs. Examples: /dbfs/FileStore/taiwan_trading or a UC Volume path.",
+    )
+    parser.add_argument(
+        "--scratch-root",
+        type=Path,
+        help="Local scratch root for active DuckDB writes. Defaults to /local_disk0/taiwan_trading_work on Databricks.",
     )
     parser.add_argument("--db", type=Path, help="DuckDB path. Defaults to <root>/data/taiwan_trading.duckdb.")
     parser.add_argument("--capital-twd", type=float, default=1_000_000.0)
@@ -62,26 +153,24 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> int:
-    args = parse_args()
+def run_databricks_pipeline(
+    args: argparse.Namespace,
+    *,
+    pipeline_func: Callable[..., Any] | None = None,
+) -> int:
     root = args.root.expanduser()
-    db_path = (args.db if args.db is not None else root / "data" / "taiwan_trading.duckdb").expanduser()
-    output_dir = root / "reports" / "live_signals"
-    log_dir = root / "logs"
+    persistent_db = (args.db if args.db is not None else root / "data" / "taiwan_trading.duckdb").expanduser()
+    persistent_reports_dir = root / "reports"
+    persistent_output_dir = persistent_reports_dir / "live_signals"
+    persistent_log_dir = root / "logs"
+    scratch_root = (args.scratch_root if args.scratch_root is not None else default_scratch_root(root)).expanduser()
     run_date = datetime.now(CHICAGO_TZ).strftime("%Y-%m-%d")
-    log_file = log_dir / f"databricks_daily_pipeline_{run_date}.log"
-    error_log = log_dir / "databricks_daily_pipeline_errors.log"
+    persistent_log_file = persistent_log_dir / f"databricks_daily_pipeline_{run_date}.log"
+    persistent_error_log = persistent_log_dir / "databricks_daily_pipeline_errors.log"
 
     root.mkdir(parents=True, exist_ok=True)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    log_dir.mkdir(parents=True, exist_ok=True)
-
-    os.environ["TAIWAN_TRADING_ROOT"] = str(root)
-    os.environ["TAIWAN_TRADING_DB_PATH"] = str(db_path)
-    os.environ["TAIWAN_PAPER_TRADING_ONLY"] = "1"
-    os.environ.setdefault("PYTHONUNBUFFERED", "1")
-    os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
-    os.environ.setdefault("TZ", "America/Chicago")
+    persistent_output_dir.mkdir(parents=True, exist_ok=True)
+    persistent_log_dir.mkdir(parents=True, exist_ok=True)
 
     if str(CODE_ROOT) not in sys.path:
         sys.path.insert(0, str(CODE_ROOT))
@@ -96,27 +185,56 @@ def main() -> int:
     log("Taiwan closed-limit-up Databricks paper pipeline")
     log(f"Started: {datetime.now(CHICAGO_TZ).isoformat()}")
     log(f"Code root: {CODE_ROOT}")
-    log(f"Runtime root: {root}")
-    log(f"Database: {db_path}")
-    log(f"Output dir: {output_dir}")
+    log(f"Persistent root: {root}")
+    log(f"Persistent DB: {persistent_db}")
+    log(f"Persistent output dir: {persistent_output_dir}")
+    log(f"Scratch root: {scratch_root}")
     log("Paper trading only: no real orders are submitted by this pipeline.")
     log("=" * 72)
     exit_code = 0
+    scratch_db = scratch_root / "data" / "taiwan_trading.duckdb"
+    scratch_output_dir = scratch_root / "reports" / "live_signals"
+    scratch_logs_dir = scratch_root / "logs"
+    scratch_log_file = scratch_logs_dir / f"databricks_daily_pipeline_{run_date}.log"
+    scratch_error_log = scratch_logs_dir / "databricks_daily_pipeline_errors.log"
+    db_sync_back_succeeded = False
+    copied_report_count = 0
     try:
-        if not db_path.exists():
+        if not persistent_db.exists():
             raise FileNotFoundError(
-                f"DuckDB database is missing: {db_path}. "
+                f"DuckDB database is missing: {persistent_db}. "
                 "Upload or create the database before running the Databricks job."
             )
-        from src.live.run_daily_closed_limit_up_pipeline import run_daily_closed_limit_up_pipeline
+        scratch_db, scratch_output_dir, scratch_logs_dir = prepare_scratch_workspace(
+            persistent_db=persistent_db,
+            persistent_reports_dir=persistent_reports_dir,
+            scratch_root=scratch_root,
+        )
+        scratch_log_file = scratch_logs_dir / f"databricks_daily_pipeline_{run_date}.log"
+        scratch_error_log = scratch_logs_dir / "databricks_daily_pipeline_errors.log"
+        log(f"Scratch DB: {scratch_db}")
+        log(f"Scratch output dir: {scratch_output_dir}")
+        log(f"Scratch logs dir: {scratch_logs_dir}")
 
-        result = run_daily_closed_limit_up_pipeline(
-            db_path=db_path,
+        os.environ["TAIWAN_TRADING_ROOT"] = str(scratch_root)
+        os.environ["TAIWAN_TRADING_DB_PATH"] = str(scratch_db)
+        os.environ["TAIWAN_PAPER_TRADING_ONLY"] = "1"
+        os.environ.setdefault("PYTHONUNBUFFERED", "1")
+        os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
+        os.environ.setdefault("TZ", "America/Chicago")
+
+        if pipeline_func is None:
+            from src.live.run_daily_closed_limit_up_pipeline import run_daily_closed_limit_up_pipeline
+
+            pipeline_func = run_daily_closed_limit_up_pipeline
+
+        result = pipeline_func(
+            db_path=scratch_db,
             capital_twd=args.capital_twd,
             market=args.market,
             start=args.start,
             end=args.end,
-            output_dir=output_dir,
+            output_dir=scratch_output_dir,
             skip_data_update=args.skip_data_update,
             skip_index_update=args.skip_index_update,
             skip_sector_update=args.skip_sector_update,
@@ -126,29 +244,54 @@ def main() -> int:
             profile=args.profile,
             taiex_retry_delay_seconds=args.taiex_retry_delay_seconds,
         )
+        sync_scratch_db_back(scratch_db=scratch_db, persistent_db=persistent_db)
+        db_sync_back_succeeded = True
+        copied_report_count = copy_tree_files(scratch_output_dir, persistent_output_dir)
         log(f"Completed: {datetime.now(CHICAGO_TZ).isoformat()}")
         log(f"Latest pipeline report: {result.report_path}")
         log(f"TAIEX freshness: {result.taiex_freshness_status}")
         log(f"Selected paper orders: {result.selected_orders}")
+        log(f"DB sync-back succeeded: {db_sync_back_succeeded}")
+        log(f"Copied report files back: {copied_report_count}")
         log("Selected orders by profile:")
         for profile_name, count in result.selected_orders_by_profile.items():
             log(f"- {profile_name}: {count}")
-        log(f"Log file: {log_file}")
+        log(f"Scratch log file: {scratch_log_file}")
+        log(f"Persistent log file: {persistent_log_file}")
     except Exception as exc:  # noqa: BLE001 - top-level runner should log full failure details.
         exit_code = 1
-        failure_line = f"[{datetime.now(CHICAGO_TZ).isoformat()}] FAILURE db={db_path} log={log_file}: {exc}\n"
-        safe_append_text(error_log, failure_line)
+        failure_line = (
+            f"[{datetime.now(CHICAGO_TZ).isoformat()}] FAILURE persistent_db={persistent_db} "
+            f"scratch_db={scratch_db} log={scratch_log_file}: {exc}\n"
+        )
+        safe_append_text(scratch_error_log, failure_line)
         log("Databricks paper pipeline failed.")
         log(traceback.format_exc())
-        log(f"Error log: {error_log}")
+        log("Persistent DB was not overwritten because the run failed.")
+        log(f"Scratch error log: {scratch_error_log}")
+        log(f"Persistent error log: {persistent_error_log}")
     finally:
         try:
-            safe_write_text(log_file, "\n".join(log_lines) + "\n")
+            log(f"Final DB sync-back succeeded: {db_sync_back_succeeded}")
+            log(f"Final copied report count: {copied_report_count}")
+            safe_write_text(scratch_log_file, "\n".join(log_lines) + "\n")
+            copy_tree_files(scratch_logs_dir, persistent_log_dir)
         except Exception as log_exc:  # noqa: BLE001 - stdout still carries the run status.
-            print(f"Failed to write Databricks log file {log_file}: {log_exc}", file=sys.stderr)
+            print(f"Failed to write or copy Databricks log files: {log_exc}", file=sys.stderr)
+            try:
+                safe_append_text(
+                    persistent_error_log,
+                    f"[{datetime.now(CHICAGO_TZ).isoformat()}] log copy failure: {log_exc}\n",
+                )
+            except Exception:  # noqa: BLE001
+                pass
             if exit_code == 0:
                 exit_code = 1
     return exit_code
+
+
+def main() -> int:
+    return run_databricks_pipeline(parse_args())
 
 
 if __name__ == "__main__":
