@@ -21,6 +21,7 @@ from src.backtests.event_study import build_event_candidates
 from src.backtests.strategy_limit_momentum import BOARD_LOT_SIZE
 from src.db import get_connection, init_db
 from src.live.strategy_profiles import (
+    ALL_PROFILE_NAMES,
     ORIGINAL_CHAMPION,
     StrategyProfile,
     resolve_profile_selection,
@@ -50,6 +51,10 @@ OUTPUT_COLUMNS = [
     "volume_ratio_20d",
     "consecutive_limit_up_count",
     "fill_quality_score",
+    "same_sector_limitup_count",
+    "same_industry_limitup_count",
+    "market_limitup_count",
+    "theme_breadth_score",
     "planned_entry_price",
     "planned_exit",
     "target_notional_twd",
@@ -431,6 +436,7 @@ def prepare_signal_candidates(
     frame["name"] = first_nonblank(frame, ["mapped_name", "daily_price_name", "symbol"])
     frame["sector"] = clean_group_values(frame.get("sector"), "MISSING_SECTOR")
     frame["industry"] = clean_group_values(frame.get("industry"), "MISSING_INDUSTRY")
+    frame = add_theme_breadth_features(frame)
 
     for column in [
         "day0_open",
@@ -528,6 +534,47 @@ def add_prior_return_features(candidates: pd.DataFrame, price_history: pd.DataFr
     return output
 
 
+def add_theme_breadth_features(candidates: pd.DataFrame) -> pd.DataFrame:
+    """Add same-day closed-limit-up breadth by sector, industry, and market."""
+
+    frame = candidates.copy()
+    if frame.empty:
+        for column in [
+            "same_sector_limitup_count",
+            "same_industry_limitup_count",
+            "market_limitup_count",
+            "theme_breadth_score",
+        ]:
+            frame[column] = []
+        return frame
+    closed = frame[frame["closed_limit_up"].fillna(False).astype(bool)].copy()
+    if closed.empty:
+        frame["same_sector_limitup_count"] = 0
+        frame["same_industry_limitup_count"] = 0
+        frame["market_limitup_count"] = 0
+        frame["theme_breadth_score"] = 0.0
+        return frame
+
+    sector_counts = (
+        closed.groupby(["signal_date", "sector"], dropna=False).size().rename("same_sector_limitup_count").reset_index()
+    )
+    industry_counts = (
+        closed.groupby(["signal_date", "industry"], dropna=False).size().rename("same_industry_limitup_count").reset_index()
+    )
+    market_counts = closed.groupby("signal_date", dropna=False).size().rename("market_limitup_count").reset_index()
+    frame = frame.merge(sector_counts, on=["signal_date", "sector"], how="left")
+    frame = frame.merge(industry_counts, on=["signal_date", "industry"], how="left")
+    frame = frame.merge(market_counts, on="signal_date", how="left")
+    for column in ["same_sector_limitup_count", "same_industry_limitup_count", "market_limitup_count"]:
+        frame[column] = pd.to_numeric(frame[column], errors="coerce").fillna(0).astype(int)
+    frame["theme_breadth_score"] = (
+        2.0 * frame["same_sector_limitup_count"]
+        + 3.0 * frame["same_industry_limitup_count"]
+        + 0.25 * frame["market_limitup_count"]
+    )
+    return frame
+
+
 def calculate_limit_up_sequences(history: pd.DataFrame) -> pd.DataFrame:
     """Count consecutive closed-limit-up days through each date."""
 
@@ -577,16 +624,16 @@ def first_skip_reason(row: dict[str, Any], config: SignalGeneratorConfig) -> str
     if not bool(row.get("closed_limit_up", False)):
         return "not_closed_limit_up"
     if safe_float(row.get("day0_turnover_twd")) < config.min_turnover_twd:
-        return "turnover_below_500m"
+        return "turnover_below_minimum"
     if safe_float(row.get("volume_ratio_20d")) < config.min_volume_ratio_20d:
-        return "volume_ratio_below_1_5"
+        return "volume_ratio_below_minimum"
     if safe_float(row.get("consecutive_limit_up_count")) > config.max_consecutive_limit_ups:
         return "too_many_consecutive_limit_ups"
     close_price = safe_float(row.get("day0_close"))
     if close_price < config.min_price or close_price > config.max_price:
-        return "price_outside_10_to_100"
+        return "price_outside_configured_range"
     if safe_float(row.get("fill_quality_score")) < config.min_fill_quality_score:
-        return "fill_quality_below_60"
+        return "fill_quality_below_minimum"
     if not bool(row.get("fillable_moderate", False)):
         return "failed_moderate_fill_proxy"
     if str(row.get("sector", "")).strip() in config.avoid_sectors:
@@ -670,6 +717,10 @@ def build_planned_orders(
                 "volume_ratio_20d": safe_float(row.get("volume_ratio_20d")),
                 "consecutive_limit_up_count": int(safe_float(row.get("consecutive_limit_up_count"), 0)),
                 "fill_quality_score": safe_float(row.get("fill_quality_score")),
+                "same_sector_limitup_count": int(safe_float(row.get("same_sector_limitup_count"), 0)),
+                "same_industry_limitup_count": int(safe_float(row.get("same_industry_limitup_count"), 0)),
+                "market_limitup_count": int(safe_float(row.get("market_limitup_count"), 0)),
+                "theme_breadth_score": safe_float(row.get("theme_breadth_score"), 0.0),
                 "planned_entry_price": close_price,
                 "planned_exit": PLANNED_EXIT,
                 "target_notional_twd": config.target_notional_twd,
@@ -711,6 +762,15 @@ def rank_candidates(candidates: pd.DataFrame, config: SignalGeneratorConfig) -> 
             + 25.0 * frame["volume_rank_score"].fillna(0.0)
         )
         sort_columns = ["composite_score", "fill_quality_score", "day0_turnover_twd", "symbol"]
+    elif config.ranking_method == "theme_breadth_score":
+        sort_columns = [
+            "theme_breadth_score",
+            "same_industry_limitup_count",
+            "same_sector_limitup_count",
+            "fill_quality_score",
+            "day0_turnover_twd",
+            "symbol",
+        ]
     else:
         sort_columns = ["fill_quality_score", "day0_turnover_twd", "volume_ratio_20d", "symbol"]
     ascending = [False] * (len(sort_columns) - 1) + [True]
@@ -787,6 +847,10 @@ def build_markdown_report(
                     "volume_ratio_20d",
                     "consecutive_limit_up_count",
                     "fill_quality_score",
+                    "same_sector_limitup_count",
+                    "same_industry_limitup_count",
+                    "market_limitup_count",
+                    "theme_breadth_score",
                     "fillable_moderate",
                     "moderate_fill_reason",
                 ]
@@ -944,6 +1008,10 @@ def empty_candidate_frame() -> pd.DataFrame:
             "volume_ratio_20d",
             "consecutive_limit_up_count",
             "fill_quality_score",
+            "same_sector_limitup_count",
+            "same_industry_limitup_count",
+            "market_limitup_count",
+            "theme_breadth_score",
             "sector",
             "industry",
             "fillable_moderate",
@@ -994,7 +1062,7 @@ def main() -> None:
     parser.add_argument(
         "--profile",
         default=ORIGINAL_CHAMPION,
-        choices=[ORIGINAL_CHAMPION, "broad_challenger_097dd332", "conservative_tpex_35adc734", "all"],
+        choices=[*ALL_PROFILE_NAMES, "all"],
     )
     parser.add_argument("--skip-refresh-events", action="store_true")
     args = parser.parse_args()

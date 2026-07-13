@@ -14,7 +14,8 @@ from config.settings import get_settings
 ORIGINAL_CHAMPION = "original_champion_tpex_500m"
 BROAD_CHALLENGER = "broad_challenger_097dd332"
 CONSERVATIVE_TPEX = "conservative_tpex_35adc734"
-ALL_PROFILE_NAMES = (ORIGINAL_CHAMPION, BROAD_CHALLENGER, CONSERVATIVE_TPEX)
+EXPANDED_THEME_BREADTH = "expanded_theme_breadth_3eff3bfd"
+ALL_PROFILE_NAMES = (ORIGINAL_CHAMPION, BROAD_CHALLENGER, CONSERVATIVE_TPEX, EXPANDED_THEME_BREADTH)
 
 
 @dataclass(frozen=True)
@@ -69,16 +70,27 @@ def load_strategy_profiles(*, report_dir: Path | str | None = None) -> dict[str,
         ORIGINAL_CHAMPION: original_champion_profile(),
         BROAD_CHALLENGER: broad_challenger_profile(),
         CONSERVATIVE_TPEX: conservative_tpex_profile(),
+        EXPANDED_THEME_BREADTH: expanded_theme_breadth_profile(),
     }
-    exact_path = reports / "focused_challenger_exact_results.csv"
-    if exact_path.exists():
+    focused_exact_path = reports / "focused_challenger_exact_results.csv"
+    if focused_exact_path.exists():
         try:
-            exact = pd.read_csv(exact_path)
+            exact = pd.read_csv(focused_exact_path)
         except pd.errors.EmptyDataError:
             exact = pd.DataFrame()
         for name, profile in list(profiles.items()):
             if profile.candidate_hash:
                 hydrated = hydrate_profile_from_exact_results(profile, exact)
+                profiles[name] = hydrated
+    expanded_exact_path = reports / "expanded_clu_tournament_exact.csv"
+    if expanded_exact_path.exists():
+        try:
+            expanded = pd.read_csv(expanded_exact_path)
+        except pd.errors.EmptyDataError:
+            expanded = pd.DataFrame()
+        for name, profile in list(profiles.items()):
+            if profile.candidate_hash:
+                hydrated = hydrate_profile_from_expanded_results(profile, expanded)
                 profiles[name] = hydrated
     return profiles
 
@@ -146,6 +158,28 @@ def conservative_tpex_profile() -> StrategyProfile:
     )
 
 
+def expanded_theme_breadth_profile() -> StrategyProfile:
+    return StrategyProfile(
+        profile_name=EXPANDED_THEME_BREADTH,
+        candidate_hash="3eff3bfd",
+        market="BOTH",
+        min_turnover_twd=200_000_000.0,
+        min_volume_ratio_20d=1.5,
+        market_regime_filter="not_bear",
+        ranking_method="theme_breadth_score",
+        max_positions=8,
+        max_notional_per_symbol_pct=0.20,
+        max_notional_per_sector_pct=0.70,
+        max_notional_per_industry_pct=0.35,
+        weak_sector_handling="avoid_healthcare_materials",
+        warnings=(
+            "Expanded tournament replacement-style candidate 3eff3bfd.",
+            "Ranks by same-day sector/industry limit-up breadth and allows up to 8 paper positions.",
+            "Paper only until Day0 close fills are verified.",
+        ),
+    )
+
+
 def hydrate_profile_from_exact_results(profile: StrategyProfile, exact: pd.DataFrame) -> StrategyProfile:
     """Overlay exact focused-expansion parameters for a candidate profile."""
 
@@ -179,6 +213,55 @@ def hydrate_profile_from_exact_results(profile: StrategyProfile, exact: pd.DataF
     )
 
 
+def hydrate_profile_from_expanded_results(profile: StrategyProfile, exact: pd.DataFrame) -> StrategyProfile:
+    """Overlay expanded closed-limit-up tournament parameters for a candidate profile."""
+
+    if exact.empty or "expanded_config_hash" not in exact.columns:
+        return profile
+    matches = exact[exact["expanded_config_hash"].astype(str).eq(profile.candidate_hash)]
+    if matches.empty:
+        return profile
+    row = matches.iloc[0]
+    sector_filter = str(row.get("sector_filter", profile.weak_sector_handling))
+    cap_semiconductor = truthy(row.get("cap_semiconductor", False))
+    allowed_sectors: tuple[str, ...] = ()
+    avoid_sectors = profile.avoid_sectors
+    if sector_filter == "technology_electronics_only":
+        allowed_sectors = ("Technology/Electronics",)
+    elif sector_filter == "technology_industrials_only":
+        allowed_sectors = ("Technology/Electronics", "Industrials/Other")
+    elif sector_filter == "none":
+        avoid_sectors = ()
+    industry_cap = finite_float(row.get("max_notional_per_industry_pct"), profile.max_notional_per_industry_pct)
+    if cap_semiconductor:
+        industry_cap = min(industry_cap, 0.25)
+    return replace(
+        profile,
+        market=str(row.get("market", profile.market)).upper(),
+        min_turnover_twd=finite_float(row.get("min_turnover_twd"), profile.min_turnover_twd),
+        min_volume_ratio_20d=finite_float(row.get("min_volume_ratio_20d"), profile.min_volume_ratio_20d),
+        min_fill_quality_score=finite_float(row.get("min_fill_quality_score"), profile.min_fill_quality_score),
+        min_price=finite_float(row.get("min_price"), profile.min_price),
+        max_price=finite_float(row.get("max_price"), profile.max_price),
+        max_consecutive_limit_ups=int(finite_float(row.get("max_consecutive_limit_ups"), profile.max_consecutive_limit_ups)),
+        market_regime_filter=str(row.get("market_regime_filter", profile.market_regime_filter)),
+        ranking_method=str(row.get("ranking_method", profile.ranking_method)),
+        max_positions=int(finite_float(row.get("max_positions_per_day"), profile.max_positions)),
+        max_notional_per_symbol_pct=finite_float(
+            row.get("max_notional_per_symbol_pct"),
+            profile.max_notional_per_symbol_pct,
+        ),
+        max_notional_per_sector_pct=finite_float(
+            row.get("max_notional_per_sector_pct"),
+            profile.max_notional_per_sector_pct,
+        ),
+        max_notional_per_industry_pct=industry_cap,
+        weak_sector_handling=sector_filter,
+        avoid_sectors=avoid_sectors,
+        allowed_sectors=allowed_sectors,
+    )
+
+
 def momentum_bounds(momentum_cap: str) -> tuple[float | None, float | None]:
     mapping = {
         "none": (None, None),
@@ -187,3 +270,21 @@ def momentum_bounds(momentum_cap: str) -> tuple[float | None, float | None]:
         "10_40": (0.10, 0.40),
     }
     return mapping.get(str(momentum_cap), (None, None))
+
+
+def finite_float(value: Any, default: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    if pd.isna(parsed):
+        return default
+    return parsed
+
+
+def truthy(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y"}
+    if pd.isna(value):
+        return False
+    return bool(value)

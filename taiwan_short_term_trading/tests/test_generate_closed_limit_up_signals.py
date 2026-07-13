@@ -7,6 +7,7 @@ import pandas as pd
 from src.db import get_connection, init_db, upsert_dataframe
 from src.live.generate_closed_limit_up_signals import (
     EXECUTION_WARNING,
+    add_theme_breadth_features,
     board_lot_shares,
     generate_closed_limit_up_signals,
     generate_closed_limit_up_signals_for_profiles,
@@ -14,18 +15,22 @@ from src.live.generate_closed_limit_up_signals import (
 from src.live.strategy_profiles import (
     ALL_PROFILE_NAMES,
     BROAD_CHALLENGER,
+    EXPANDED_THEME_BREADTH,
     ORIGINAL_CHAMPION,
     load_strategy_profiles,
 )
 
 
-def test_strategy_profile_registry_returns_all_three_profiles() -> None:
+def test_strategy_profile_registry_returns_all_profiles() -> None:
     profiles = load_strategy_profiles()
 
     assert set(profiles) == set(ALL_PROFILE_NAMES)
     assert profiles[ORIGINAL_CHAMPION].market == "TPEX"
     assert profiles[BROAD_CHALLENGER].market == "BOTH"
     assert profiles[BROAD_CHALLENGER].candidate_hash == "097dd332"
+    assert profiles[EXPANDED_THEME_BREADTH].candidate_hash == "3eff3bfd"
+    assert profiles[EXPANDED_THEME_BREADTH].ranking_method == "theme_breadth_score"
+    assert profiles[EXPANDED_THEME_BREADTH].max_positions == 8
 
 
 def test_generate_signals_selects_qualifying_tpex_and_writes_outputs(tmp_path: Path) -> None:
@@ -104,6 +109,70 @@ def test_signal_generator_can_generate_all_profiles(tmp_path: Path) -> None:
     # The challenger profiles require market-regime data, so this synthetic fixture
     # intentionally exercises the zero-order profile path.
     assert results[BROAD_CHALLENGER][0].empty
+
+
+def test_theme_breadth_score_is_computed() -> None:
+    candidates = pd.DataFrame(
+        [
+            {
+                "signal_date": "2024-01-10",
+                "symbol": "7001",
+                "sector": "Technology/Electronics",
+                "industry": "Connectors",
+                "closed_limit_up": True,
+            },
+            {
+                "signal_date": "2024-01-10",
+                "symbol": "7002",
+                "sector": "Technology/Electronics",
+                "industry": "Connectors",
+                "closed_limit_up": True,
+            },
+            {
+                "signal_date": "2024-01-10",
+                "symbol": "7003",
+                "sector": "Technology/Electronics",
+                "industry": "IC Design",
+                "closed_limit_up": True,
+            },
+        ]
+    )
+
+    scored = add_theme_breadth_features(candidates)
+
+    row = scored[scored["symbol"].eq("7001")].iloc[0]
+    assert row["same_sector_limitup_count"] == 3
+    assert row["same_industry_limitup_count"] == 2
+    assert row["market_limitup_count"] == 3
+    assert row["theme_breadth_score"] == 2 * 3 + 3 * 2 + 0.25 * 3
+
+
+def test_signal_generation_supports_theme_breadth_profile(tmp_path: Path) -> None:
+    db_path = tmp_path / "taiwan_trading.duckdb"
+    output_dir = tmp_path / "live_signals"
+    seed_signal_database(db_path)
+    with get_connection(db_path) as conn:
+        upsert_dataframe(
+            conn,
+            "index_daily_prices",
+            pd.DataFrame([taiex_row(pd.Timestamp("2024-01-10"))]),
+            ["index_symbol", "trade_date"],
+        )
+
+    orders, _skipped, csv_path, _md_path = generate_closed_limit_up_signals(
+        db_path=db_path,
+        capital_twd=1_000_000,
+        signal_date="2024-01-10",
+        output_dir=output_dir,
+        profile=EXPANDED_THEME_BREADTH,
+    )
+
+    assert not orders.empty
+    assert set(orders["profile_name"]) == {EXPANDED_THEME_BREADTH}
+    assert (orders["candidate_hash"] == "3eff3bfd").all()
+    assert "theme_breadth_score" in orders.columns
+    assert orders["theme_breadth_score"].notna().all()
+    assert csv_path.name.startswith(f"closed_limit_up_signals_{EXPANDED_THEME_BREADTH}_")
 
 
 def test_signal_generator_uses_signal_date_override(tmp_path: Path) -> None:
@@ -226,4 +295,25 @@ def daily_row(
         "closed_limit_down": False,
         "source": "unit_test",
         "created_at": pd.Timestamp("2024-01-10"),
+    }
+
+
+def taiex_row(trade_date: pd.Timestamp) -> dict[str, object]:
+    return {
+        "index_symbol": "TAIEX",
+        "trade_date": trade_date,
+        "open": 18_000.0,
+        "high": 18_100.0,
+        "low": 17_900.0,
+        "close": 18_050.0,
+        "volume": 1_000_000.0,
+        "turnover_twd": 300_000_000_000.0,
+        "daily_return": 0.002,
+        "ma5": 18_000.0,
+        "ma20": 17_900.0,
+        "ma60": 17_800.0,
+        "close_above_ma20": True,
+        "close_above_ma60": True,
+        "drawdown_from_60d_high": -0.01,
+        "source": "unit_test",
     }

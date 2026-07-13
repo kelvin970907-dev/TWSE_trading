@@ -10,7 +10,7 @@ from src.live.run_daily_closed_limit_up_pipeline import (
     LEDGER_OUTPUT,
     run_daily_closed_limit_up_pipeline,
 )
-from src.live.strategy_profiles import ALL_PROFILE_NAMES, ORIGINAL_CHAMPION
+from src.live.strategy_profiles import ALL_PROFILE_NAMES, EXPANDED_THEME_BREADTH, ORIGINAL_CHAMPION
 from src.live.strategy_profiles import BROAD_CHALLENGER, CONSERVATIVE_TPEX
 
 
@@ -106,6 +106,7 @@ def test_stale_taiex_skips_market_regime_profiles_but_original_runs(tmp_path: Pa
     assert result.selected_orders_by_profile[BROAD_CHALLENGER] == 0
     assert BROAD_CHALLENGER in result.skipped_profiles_due_to_stale_regime
     assert CONSERVATIVE_TPEX in result.skipped_profiles_due_to_stale_regime
+    assert EXPANDED_THEME_BREADTH in result.skipped_profiles_due_to_stale_regime
     assert any("Skipped market-regime profile" in warning for warning in result.warnings)
     assert result.report_path is not None
     report_text = result.report_path.read_text(encoding="utf-8")
@@ -135,7 +136,9 @@ def test_fresh_taiex_allows_broad_challenger(tmp_path: Path) -> None:
 
     assert result.taiex_freshness_status == "fresh"
     assert BROAD_CHALLENGER not in result.skipped_profiles_due_to_stale_regime
+    assert EXPANDED_THEME_BREADTH not in result.skipped_profiles_due_to_stale_regime
     assert result.selected_orders_by_profile[BROAD_CHALLENGER] > 0
+    assert result.selected_orders_by_profile[EXPANDED_THEME_BREADTH] > 0
 
 
 def test_pending_evaluation_is_reported(tmp_path: Path) -> None:
