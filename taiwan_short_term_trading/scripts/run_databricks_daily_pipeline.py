@@ -153,6 +153,17 @@ def sync_scratch_db_back(*, scratch_db: Path, persistent_db: Path) -> None:
             temp_path.unlink()
 
 
+def should_run_full_strategy_analysis(args: argparse.Namespace, now: datetime | None = None) -> bool:
+    """Return whether this run should do the expensive historical chart refresh."""
+
+    if bool(getattr(args, "refresh_strategy_analysis", False)):
+        return True
+    if not bool(getattr(args, "weekly_strategy_analysis", False)):
+        return False
+    current = now or datetime.now(CHICAGO_TZ)
+    return current.astimezone(CHICAGO_TZ).weekday() == 6
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Taiwan paper pipeline on Databricks")
     parser.add_argument(
@@ -185,6 +196,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-index-update", action="store_true")
     parser.add_argument("--skip-sector-update", action="store_true")
     parser.add_argument("--refresh-sector-map", action="store_true")
+    parser.add_argument(
+        "--refresh-strategy-analysis",
+        action="store_true",
+        help="Run the full historical strategy equity reconstruction after the daily pipeline.",
+    )
+    parser.add_argument(
+        "--weekly-strategy-analysis",
+        action="store_true",
+        help="Run full historical strategy analysis only when the Databricks runner date is Sunday.",
+    )
     parser.add_argument("--taiex-retry-delay-seconds", type=float, default=30.0)
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
@@ -194,12 +215,14 @@ def run_databricks_pipeline(
     args: argparse.Namespace,
     *,
     pipeline_func: Callable[..., Any] | None = None,
+    strategy_analysis_func: Callable[..., Any] | None = None,
 ) -> int:
     code_root = resolve_code_root(args.code_root)
     root = args.root.expanduser()
     persistent_db = (args.db if args.db is not None else root / "data" / "taiwan_trading.duckdb").expanduser()
     persistent_reports_dir = root / "reports"
     persistent_output_dir = persistent_reports_dir / "live_signals"
+    persistent_strategy_analysis_dir = persistent_reports_dir / "strategy_analysis"
     persistent_log_dir = root / "logs"
     scratch_root = (args.scratch_root if args.scratch_root is not None else default_scratch_root(root)).expanduser()
     run_date = datetime.now(CHICAGO_TZ).strftime("%Y-%m-%d")
@@ -237,6 +260,7 @@ def run_databricks_pipeline(
     scratch_error_log = scratch_logs_dir / "databricks_daily_pipeline_errors.log"
     db_sync_back_succeeded = False
     copied_report_count = 0
+    copied_strategy_analysis_count = 0
     try:
         if not persistent_db.exists():
             raise FileNotFoundError(
@@ -282,18 +306,39 @@ def run_databricks_pipeline(
             profile=args.profile,
             taiex_retry_delay_seconds=args.taiex_retry_delay_seconds,
         )
+        full_strategy_refresh = should_run_full_strategy_analysis(args)
+        if full_strategy_refresh:
+            if strategy_analysis_func is None:
+                from src.reports.generate_strategy_equity_analysis import run_strategy_equity_analysis
+
+                strategy_analysis_func = run_strategy_equity_analysis
+            scratch_strategy_analysis_dir = scratch_root / "reports" / "strategy_analysis"
+            log("Running full historical strategy equity analysis refresh.")
+            _equity, _drawdown, _monthly, _summary, strategy_report = strategy_analysis_func(
+                db_path=scratch_db,
+                output_dir=scratch_strategy_analysis_dir,
+            )
+            log(f"Full strategy equity analysis report: {strategy_report}")
+        else:
+            log("Full historical strategy equity analysis refresh skipped.")
         sync_scratch_db_back(scratch_db=scratch_db, persistent_db=persistent_db)
         db_sync_back_succeeded = True
         copied_report_count = copy_tree_files(scratch_output_dir, persistent_output_dir)
+        copied_strategy_analysis_count = copy_tree_files(
+            scratch_root / "reports" / "strategy_analysis",
+            persistent_strategy_analysis_dir,
+        )
         log(f"Completed: {datetime.now(CHICAGO_TZ).isoformat()}")
         log(f"Latest pipeline report: {result.report_path}")
         log(f"TAIEX freshness: {result.taiex_freshness_status}")
         log(f"Selected paper orders: {result.selected_orders}")
         log(f"DB sync-back succeeded: {db_sync_back_succeeded}")
         log(f"Copied report files back: {copied_report_count}")
+        log(f"Copied strategy analysis files back: {copied_strategy_analysis_count}")
         log("Selected orders by profile:")
         for profile_name, count in result.selected_orders_by_profile.items():
             log(f"- {profile_name}: {count}")
+        log(f"Persistent strategy analysis dir: {persistent_strategy_analysis_dir}")
         log(f"Scratch log file: {scratch_log_file}")
         log(f"Persistent log file: {persistent_log_file}")
     except Exception as exc:  # noqa: BLE001 - top-level runner should log full failure details.
@@ -312,6 +357,7 @@ def run_databricks_pipeline(
         try:
             log(f"Final DB sync-back succeeded: {db_sync_back_succeeded}")
             log(f"Final copied report count: {copied_report_count}")
+            log(f"Final copied strategy analysis count: {copied_strategy_analysis_count}")
             safe_write_text(scratch_log_file, "\n".join(log_lines) + "\n")
             copy_tree_files(scratch_logs_dir, persistent_log_dir)
         except Exception as log_exc:  # noqa: BLE001 - stdout still carries the run status.

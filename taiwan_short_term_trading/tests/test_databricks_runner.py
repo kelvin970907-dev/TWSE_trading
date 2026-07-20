@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+from datetime import datetime
 from types import SimpleNamespace
 from pathlib import Path
 
@@ -90,6 +91,9 @@ def test_success_copies_db_to_scratch_syncs_back_and_copies_reports(tmp_path: Pa
         assert (scratch_output / "existing.csv").read_text(encoding="utf-8") == "existing-report"
         scratch_db.write_text("new-db", encoding="utf-8")
         (scratch_output / "daily_pipeline_report_test.md").write_text("report", encoding="utf-8")
+        strategy_dir = scratch_output.parent / "strategy_analysis"
+        strategy_dir.mkdir()
+        (strategy_dir / "paper_equity_curves_by_profile.png").write_text("chart", encoding="utf-8")
         return SimpleNamespace(
             report_path=scratch_output / "daily_pipeline_report_test.md",
             taiex_freshness_status="fresh",
@@ -102,8 +106,49 @@ def test_success_copies_db_to_scratch_syncs_back_and_copies_reports(tmp_path: Pa
     assert exit_code == 0
     assert persistent_db.read_text(encoding="utf-8") == "new-db"
     assert (root / "reports" / "live_signals" / "daily_pipeline_report_test.md").read_text(encoding="utf-8") == "report"
+    assert (root / "reports" / "strategy_analysis" / "paper_equity_curves_by_profile.png").read_text(
+        encoding="utf-8"
+    ) == "chart"
     assert (root / "logs" / "databricks_daily_pipeline_errors.log").exists() is False
     assert list((root / "logs").glob("databricks_daily_pipeline_*.log"))
+
+
+def test_full_strategy_analysis_refresh_runs_and_copies_back(tmp_path: Path) -> None:
+    runner = load_runner_module()
+    root = tmp_path / "persistent"
+    scratch = tmp_path / "scratch"
+    persistent_db = root / "data" / "taiwan_trading.duckdb"
+    persistent_db.parent.mkdir(parents=True)
+    persistent_db.write_text("old-db", encoding="utf-8")
+
+    def fake_pipeline(**kwargs):
+        Path(kwargs["db_path"]).write_text("new-db", encoding="utf-8")
+        return SimpleNamespace(
+            report_path=Path(kwargs["output_dir"]) / "daily_pipeline_report_test.md",
+            taiex_freshness_status="fresh",
+            selected_orders=0,
+            selected_orders_by_profile={},
+        )
+
+    def fake_strategy_analysis(**kwargs):
+        output_dir = Path(kwargs["output_dir"])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        report_path = output_dir / "strategy_equity_analysis.md"
+        report_path.write_text("strategy report", encoding="utf-8")
+        return None, None, None, None, report_path
+
+    args = make_args(root, scratch)
+    args.refresh_strategy_analysis = True
+    exit_code = runner.run_databricks_pipeline(
+        args,
+        pipeline_func=fake_pipeline,
+        strategy_analysis_func=fake_strategy_analysis,
+    )
+
+    assert exit_code == 0
+    assert (root / "reports" / "strategy_analysis" / "strategy_equity_analysis.md").read_text(
+        encoding="utf-8"
+    ) == "strategy report"
 
 
 def test_failure_does_not_overwrite_persistent_db_and_copies_logs(tmp_path: Path) -> None:
@@ -170,6 +215,20 @@ def test_run_as_script_raises_system_exit_on_failure(monkeypatch: pytest.MonkeyP
     assert exc_info.value.code == 7
 
 
+def test_should_run_full_strategy_analysis_only_on_requested_sunday() -> None:
+    runner = load_runner_module()
+    args = make_args(Path("/tmp/root"), Path("/tmp/scratch"))
+
+    assert runner.should_run_full_strategy_analysis(args, datetime(2026, 7, 15, tzinfo=runner.CHICAGO_TZ)) is False
+
+    args.weekly_strategy_analysis = True
+    assert runner.should_run_full_strategy_analysis(args, datetime(2026, 7, 19, tzinfo=runner.CHICAGO_TZ)) is True
+    assert runner.should_run_full_strategy_analysis(args, datetime(2026, 7, 18, tzinfo=runner.CHICAGO_TZ)) is False
+
+    args.refresh_strategy_analysis = True
+    assert runner.should_run_full_strategy_analysis(args, datetime(2026, 7, 18, tzinfo=runner.CHICAGO_TZ)) is True
+
+
 def make_args(root: Path, scratch_root: Path | None) -> SimpleNamespace:
     return SimpleNamespace(
         root=root,
@@ -186,6 +245,8 @@ def make_args(root: Path, scratch_root: Path | None) -> SimpleNamespace:
         skip_index_update=False,
         skip_sector_update=False,
         refresh_sector_map=False,
+        refresh_strategy_analysis=False,
+        weekly_strategy_analysis=False,
         taiex_retry_delay_seconds=0.0,
         dry_run=False,
     )

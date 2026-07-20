@@ -52,8 +52,15 @@ def test_zero_order_signal_day_works_and_report_is_generated(tmp_path: Path) -> 
     assert result.selected_orders == 0
     assert result.generated_signal_file is not None
     assert result.generated_signal_file.exists()
+    assert result.paper_strategy_analysis_refreshed is True
+    assert result.paper_equity_chart.exists()
+    assert result.paper_drawdown_chart.exists()
+    assert result.paper_profile_summary.exists()
     assert result.report_path is not None
-    assert "Selected paper orders: `0`" in result.report_path.read_text(encoding="utf-8")
+    report_text = result.report_path.read_text(encoding="utf-8")
+    assert "Selected paper orders: `0`" in report_text
+    assert "Strategy Analysis Outputs" in report_text
+    assert str(result.historical_normalized_equity_chart) in report_text
 
 
 def test_all_profile_report_handles_zero_order_profiles(tmp_path: Path) -> None:

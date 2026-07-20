@@ -406,9 +406,42 @@ The Databricks runner writes:
 - logs to `${TAIWAN_TRADING_ROOT}/logs/databricks_daily_pipeline_YYYY-MM-DD.log`
 - errors to `${TAIWAN_TRADING_ROOT}/logs/databricks_daily_pipeline_errors.log`
 - signal reports to `${TAIWAN_TRADING_ROOT}/reports/live_signals/`
+- lightweight strategy-analysis refreshes to `${TAIWAN_TRADING_ROOT}/reports/strategy_analysis/`
 - raw endpoint caches to `${TAIWAN_TRADING_ROOT}/data/raw/`
 
 Schedule the Databricks Job for weekdays after Taiwan market data is likely available. The local launchd schedule is 03:30 America/Chicago, which corresponds to 16:30 Taiwan time during Chicago daylight time and 17:30 Taiwan time during Chicago standard time. Use the same timing for a Databricks Job unless public source publication delays require a later retry.
+
+The daily Databricks job refreshes only forward paper-trading analysis because it is cheap and does not rerun historical portfolio reconstruction. It updates:
+
+- `${TAIWAN_TRADING_ROOT}/reports/strategy_analysis/paper_equity_curves_by_profile.png`
+- `${TAIWAN_TRADING_ROOT}/reports/strategy_analysis/paper_drawdown_curves_by_profile.png`
+- `${TAIWAN_TRADING_ROOT}/reports/strategy_analysis/paper_profile_summary.csv`
+
+Run the expensive historical strategy equity analysis manually, or as a separate weekly Sunday Databricks job:
+
+```bash
+python scripts/run_databricks_daily_pipeline.py \
+  --code-root /Workspace/Users/kelvin970907@gmail.com/TWSE_trading/taiwan_short_term_trading \
+  --root /Volumes/work/taiwan_trading/trading_files/taiwan_trading \
+  --capital-twd 1000000 \
+  --profile all \
+  --market BOTH \
+  --refresh-strategy-analysis
+```
+
+If you want one reusable Databricks task that only refreshes historical charts on Sundays, use:
+
+```bash
+python scripts/run_databricks_daily_pipeline.py \
+  --code-root /Workspace/Users/kelvin970907@gmail.com/TWSE_trading/taiwan_short_term_trading \
+  --root /Volumes/work/taiwan_trading/trading_files/taiwan_trading \
+  --capital-twd 1000000 \
+  --profile all \
+  --market BOTH \
+  --weekly-strategy-analysis
+```
+
+Historical analysis outputs are written under `${TAIWAN_TRADING_ROOT}/reports/strategy_analysis/`, including `strategy_equity_analysis.md`, `strategy_equity_daily.csv`, `strategy_drawdown_daily.csv`, `strategy_monthly_returns.csv`, `strategy_performance_summary.csv`, historical equity/drawdown/rolling-return PNGs, and the latest forward-paper equity chart. Daily pipeline reports include the current paths to the latest paper equity chart, historical normalized equity chart, historical drawdown chart, and strategy performance summary.
 
 Safeguards:
 

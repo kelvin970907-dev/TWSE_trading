@@ -30,6 +30,13 @@ from src.live.strategy_profiles import ALL_PROFILE_NAMES, StrategyProfile, resol
 
 EXECUTION_WARNING = "Execution remains paper-only until actual Day0 close auction/order-book fills are verified."
 TAIPEI_TZ = ZoneInfo("Asia/Taipei")
+STRATEGY_ANALYSIS_DIR_NAME = "strategy_analysis"
+PAPER_EQUITY_CHART = "paper_equity_curves_by_profile.png"
+PAPER_DRAWDOWN_CHART = "paper_drawdown_curves_by_profile.png"
+PAPER_PROFILE_SUMMARY = "paper_profile_summary.csv"
+HISTORICAL_NORMALIZED_EQUITY_CHART = "historical_normalized_equity_curves.png"
+HISTORICAL_DRAWDOWN_CHART = "historical_drawdown_curves.png"
+STRATEGY_PERFORMANCE_SUMMARY = "strategy_performance_summary.csv"
 
 
 @dataclass
@@ -68,6 +75,14 @@ class PipelineResult:
     warnings: list[str]
     ledger_summary: dict[str, Any]
     manual_fill_summary: dict[str, Any]
+    strategy_analysis_dir: Path
+    paper_strategy_analysis_refreshed: bool
+    paper_equity_chart: Path
+    paper_drawdown_chart: Path
+    paper_profile_summary: Path
+    historical_normalized_equity_chart: Path
+    historical_drawdown_chart: Path
+    strategy_performance_summary: Path
     report_path: Path | None
 
 
@@ -336,6 +351,22 @@ def run_daily_closed_limit_up_pipeline(
     event_candidates_rows = count_event_candidates(db)
     ledger_summary = summarize_paper_ledger(report_dir / LEDGER_OUTPUT)
     manual_fill_summary = missing_manual_observation_status(db_path=db, output_dir=report_dir)
+    strategy_analysis_dir = report_dir.parent / STRATEGY_ANALYSIS_DIR_NAME
+    paper_equity_chart = strategy_analysis_dir / PAPER_EQUITY_CHART
+    paper_drawdown_chart = strategy_analysis_dir / PAPER_DRAWDOWN_CHART
+    paper_profile_summary = strategy_analysis_dir / PAPER_PROFILE_SUMMARY
+    historical_normalized_equity_chart = strategy_analysis_dir / HISTORICAL_NORMALIZED_EQUITY_CHART
+    historical_drawdown_chart = strategy_analysis_dir / HISTORICAL_DRAWDOWN_CHART
+    strategy_performance_summary = strategy_analysis_dir / STRATEGY_PERFORMANCE_SUMMARY
+    paper_strategy_analysis_refreshed = False
+    if not dry_run:
+        try:
+            from src.reports.generate_strategy_equity_analysis import refresh_paper_strategy_analysis
+
+            refresh_paper_strategy_analysis(output_dir=strategy_analysis_dir, ledger_path=report_dir / LEDGER_OUTPUT)
+            paper_strategy_analysis_refreshed = True
+        except Exception as exc:  # noqa: BLE001 - report the failure without blocking paper signals.
+            warnings.append(f"paper strategy analysis refresh failed: {exc}")
     if (
         int(manual_fill_summary.get("total_signal_orders", 0)) > 0
         and int(manual_fill_summary.get("missing_manual_observations", 0)) > 0
@@ -382,6 +413,14 @@ def run_daily_closed_limit_up_pipeline(
         warnings=warnings,
         ledger_summary=ledger_summary,
         manual_fill_summary=manual_fill_summary,
+        strategy_analysis_dir=strategy_analysis_dir,
+        paper_strategy_analysis_refreshed=paper_strategy_analysis_refreshed,
+        paper_equity_chart=paper_equity_chart,
+        paper_drawdown_chart=paper_drawdown_chart,
+        paper_profile_summary=paper_profile_summary,
+        historical_normalized_equity_chart=historical_normalized_equity_chart,
+        historical_drawdown_chart=historical_drawdown_chart,
+        strategy_performance_summary=strategy_performance_summary,
         report_path=None,
     )
 
@@ -754,6 +793,17 @@ def build_pipeline_report(result: PipelineResult) -> str:
         "Profile-level ledger:",
         "",
         markdown_table(pd.DataFrame(ledger_profile_rows)),
+        "",
+        "## Strategy Analysis Outputs",
+        "",
+        f"Paper-only analysis refreshed this run: `{result.paper_strategy_analysis_refreshed}`",
+        f"Strategy analysis directory: `{result.strategy_analysis_dir}`",
+        f"Latest paper equity chart: `{result.paper_equity_chart}`",
+        f"Latest paper drawdown chart: `{result.paper_drawdown_chart}`",
+        f"Paper profile summary: `{result.paper_profile_summary}`",
+        f"Historical normalized equity chart: `{result.historical_normalized_equity_chart}`",
+        f"Historical drawdown chart: `{result.historical_drawdown_chart}`",
+        f"Strategy performance summary: `{result.strategy_performance_summary}`",
         "",
         "## Manual Fill Observations",
         "",
